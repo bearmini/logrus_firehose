@@ -117,6 +117,10 @@ func (h *FirehoseHook) bufLoop() {
 }
 
 func (h *FirehoseHook) flush() {
+	if len(h.buf) == 0 {
+		return
+	}
+
 	records := make([]*firehose.Record, 0, len(h.buf))
 	for _, e := range h.buf {
 		records = append(records, &firehose.Record{
