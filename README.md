@@ -1,7 +1,7 @@
 logrus_firehose
 ====
 
- [![GoDoc](https://godoc.org/github.com/beaubrewer/logrus_firehose?status.svg)](https://godoc.org/github.com/beaubrewer/logrus_firehose)
+ [![GoDoc](https://godoc.org/github.com/bearmini/logrus_firehose?status.svg)](https://godoc.org/github.com/bearmini/logrus_firehose)
 
 
 # AWS Firehose Hook for Logrus <img src="http://i.imgur.com/hTeVwmJ.png" width="40" height="40" alt=":walrus:" class="emoji" title=":walrus:"/>
@@ -10,17 +10,20 @@ logrus_firehose
 
 ```go
 import (
-    "github.com/sirupsen/logrus"
+    "github.com/aws/aws-sdk-go/aws"
+    "github.com/aws/aws-sdk-go/aws/credentials"
+    "github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
     "github.com/beaubrewer/logrus_firehose"
+    "github.com/sirupsen/logrus"
 )
 
 func main() {
-    hook, err := logrus_firehose.New("my_stream", logrus_firehose.Config{
-        AccessKey: "ABC", // AWS accessKeyId
-        SecretKey: "XYZ", // AWS secretAccessKey
-        Region:    "us-west-2",
-        Endpoint: "firehose.us-west-2.amazonaws.com" ,
-    })
+    cred := credentials.NewCredentials(&ec2rolecreds.EC2RoleProvider{})
+    awsConfig := &aws.Config{
+        Credentials: cred,
+        Region:      aws.String("us-west-2"),
+    }
+    hook, err := logrus_firehose.NewWithAWSConfig("my_stream", awsConfig)
 
     // set custom fire level
     hook.SetLevels([]logrus.Level{

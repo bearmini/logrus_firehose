@@ -33,23 +33,6 @@ type FirehoseHook struct {
 	addNewline          bool
 }
 
-// New returns initialized logrus hook for Firehose with persistent Firehose logger.
-func New(name string, conf Config) (*FirehoseHook, error) {
-	sess, err := session.NewSession(conf.AWSConfig())
-	if err != nil {
-		return nil, err
-	}
-
-	svc := firehose.New(sess)
-	return &FirehoseHook{
-		client:            svc,
-		defaultStreamName: name,
-		levels:            defaultLevels,
-		ignoreFields:      make(map[string]struct{}),
-		filters:           make(map[string]func(interface{}) interface{}),
-	}, nil
-}
-
 // NewWithConfig returns initialized logrus hook for Firehose with persistent Firehose logger.
 func NewWithAWSConfig(name string, conf *aws.Config) (*FirehoseHook, error) {
 	sess, err := session.NewSession(conf)
