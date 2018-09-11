@@ -121,6 +121,10 @@ func (h *FirehoseHook) flush() {
 		return
 	}
 
+	defer func() {
+		h.buf = make([]*logrus.Entry, 0)
+	}()
+
 	records := make([]*firehose.Record, 0, len(h.buf))
 	for _, e := range h.buf {
 		records = append(records, &firehose.Record{
