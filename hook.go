@@ -24,9 +24,12 @@ var defaultLevels = []logrus.Level{
 // S3), Amazon Elasticsearch Service (Amazon ES), and Amazon Redshift.
 type FirehoseHook struct {
 	client              *firehose.Firehose
-	defaultStreamName   string
+	buf                 []*logrus.Entry
+	bufCh               chan *logrus.Entry
+	flushCh             chan bool
+	errCh               chan error
+	streamName          string
 	defaultPartitionKey string
-	async               bool
 	levels              []logrus.Level
 	ignoreFields        map[string]struct{}
 	filters             map[string]func(interface{}) interface{}
@@ -34,20 +37,37 @@ type FirehoseHook struct {
 }
 
 // NewWithConfig returns initialized logrus hook for Firehose with persistent Firehose logger.
-func NewWithAWSConfig(name string, conf *aws.Config) (*FirehoseHook, error) {
+func NewWithAWSConfig(streamName string, conf *aws.Config) (*FirehoseHook, error) {
 	sess, err := session.NewSession(conf)
 	if err != nil {
 		return nil, err
 	}
 
 	svc := firehose.New(sess)
-	return &FirehoseHook{
-		client:            svc,
-		defaultStreamName: name,
-		levels:            defaultLevels,
-		ignoreFields:      make(map[string]struct{}),
-		filters:           make(map[string]func(interface{}) interface{}),
-	}, nil
+
+	bufCh := make(chan *logrus.Entry)
+	flushCh := make(chan bool)
+	errCh := make(chan error)
+
+	h := &FirehoseHook{
+		client:       svc,
+		buf:          make([]*logrus.Entry, 0),
+		bufCh:        bufCh,
+		flushCh:      flushCh,
+		errCh:        errCh,
+		streamName:   streamName,
+		levels:       defaultLevels,
+		ignoreFields: make(map[string]struct{}),
+		filters:      make(map[string]func(interface{}) interface{}),
+	}
+
+	go h.bufLoop()
+
+	return h, nil
+}
+
+func (h *FirehoseHook) GetErrorChan() <-chan error {
+	return h.errCh
 }
 
 // Levels returns logging level to fire this hook.
@@ -58,12 +78,6 @@ func (h *FirehoseHook) Levels() []logrus.Level {
 // SetLevels sets logging level to fire this hook.
 func (h *FirehoseHook) SetLevels(levels []logrus.Level) {
 	h.levels = levels
-}
-
-// Async sets async flag and send log asynchroniously.
-// If use this option, Fire() does not return error.
-func (h *FirehoseHook) Async() {
-	h.async = true
 }
 
 // AddIgnore adds field name to ignore.
@@ -83,37 +97,48 @@ func (h *FirehoseHook) AddNewLine(b bool) {
 
 // Fire is invoked by logrus and sends log to Firehose.
 func (h *FirehoseHook) Fire(entry *logrus.Entry) error {
-	if !h.async {
-		return h.fire(entry)
-	}
-
-	// send log asynchroniously and return no error.
-	go h.fire(entry)
+	h.bufCh <- entry
 	return nil
 }
 
-// Fire is invoked by logrus and sends log to Firehose.
-func (h *FirehoseHook) fire(entry *logrus.Entry) error {
-	in := &firehose.PutRecordInput{
-		DeliveryStreamName: stringPtr(h.getStreamName(entry)),
-		Record: &firehose.Record{
-			Data: h.getData(entry),
-		},
-	}
-	_, err := h.client.PutRecord(in)
-	return err
+func (h *FirehoseHook) Flush() {
+	h.flushCh <- true
 }
 
-func (h *FirehoseHook) getStreamName(entry *logrus.Entry) string {
-	if name, ok := entry.Data["stream_name"].(string); ok {
-		return name
+func (h *FirehoseHook) bufLoop() {
+	for {
+		select {
+		case e := <-h.bufCh:
+			h.buf = append(h.buf, e)
+		case <-h.flushCh:
+			h.flush()
+		}
 	}
-	return h.defaultStreamName
+}
+
+func (h *FirehoseHook) flush() {
+	records := make([]*firehose.Record, 0, len(h.buf))
+	for _, e := range h.buf {
+		records = append(records, &firehose.Record{
+			Data: h.getData(e),
+		})
+	}
+	in := &firehose.PutRecordBatchInput{
+		DeliveryStreamName: aws.String(h.streamName),
+		Records:            records,
+	}
+	_, err := h.client.PutRecordBatch(in)
+	if err != nil {
+		h.errCh <- err
+	}
 }
 
 func (h *FirehoseHook) getData(entry *logrus.Entry) []byte {
 	data := make(logrus.Fields)
-	entry.Data["message"] = entry.Message
+	if _, exists := entry.Data["message"]; !exists {
+		entry.Data["message"] = entry.Message
+	}
+
 	for k, v := range entry.Data {
 		if _, ok := h.ignoreFields[k]; ok {
 			continue
@@ -149,8 +174,4 @@ func formatData(value interface{}) (formatted interface{}) {
 	default:
 		return value
 	}
-}
-
-func stringPtr(str string) *string {
-	return &str
 }
