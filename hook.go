@@ -10,6 +10,10 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const (
+	maxBatchRecords = 500
+)
+
 var defaultLevels = []logrus.Level{
 	logrus.PanicLevel,
 	logrus.FatalLevel,
@@ -45,7 +49,7 @@ func NewWithAWSConfig(streamName string, conf *aws.Config) (*FirehoseHook, error
 
 	svc := firehose.New(sess)
 
-	bufCh := make(chan *logrus.Entry)
+	bufCh := make(chan *logrus.Entry, 1000)
 	flushCh := make(chan bool)
 	errCh := make(chan error)
 
@@ -106,6 +110,11 @@ func (h *FirehoseHook) Flush() {
 }
 
 func (h *FirehoseHook) bufLoop() {
+	defer func() {
+		if err := recover(); err != nil {
+			fmt.Printf("panic: %+v\n", err)
+		}
+	}()
 	for {
 		select {
 		case e := <-h.bufCh:
@@ -125,20 +134,36 @@ func (h *FirehoseHook) flush() {
 		h.buf = make([]*logrus.Entry, 0)
 	}()
 
-	records := make([]*firehose.Record, 0, len(h.buf))
-	for _, e := range h.buf {
-		records = append(records, &firehose.Record{
-			Data: h.getData(e),
-		})
+	for _, buf := range splitBuf(h.buf, maxBatchRecords) {
+		records := make([]*firehose.Record, 0, len(buf))
+		for _, e := range buf {
+			records = append(records, &firehose.Record{
+				Data: h.getData(e),
+			})
+		}
+		in := &firehose.PutRecordBatchInput{
+			DeliveryStreamName: aws.String(h.streamName),
+			Records:            records,
+		}
+		_, err := h.client.PutRecordBatch(in)
+		if err != nil {
+			h.errCh <- err
+		}
 	}
-	in := &firehose.PutRecordBatchInput{
-		DeliveryStreamName: aws.String(h.streamName),
-		Records:            records,
+}
+
+func splitBuf(buf []*logrus.Entry, size int) [][]*logrus.Entry {
+	result := make([][]*logrus.Entry, 0)
+	for len(buf) > 0 {
+		if len(buf) > size {
+			result = append(result, buf[:size])
+			buf = buf[size:]
+		} else {
+			result = append(result, buf)
+			buf = buf[:0]
+		}
 	}
-	_, err := h.client.PutRecordBatch(in)
-	if err != nil {
-		h.errCh <- err
-	}
+	return result
 }
 
 func (h *FirehoseHook) getData(entry *logrus.Entry) []byte {

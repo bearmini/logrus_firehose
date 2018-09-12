@@ -3,6 +3,7 @@ package logrus_firehose
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -202,3 +203,51 @@ func (myStringer) String() string { return "myStringer!" }
 type notStringer struct{}
 
 func (notStringer) String() {}
+
+func TestSplitBuf(t *testing.T) {
+	logger := logrus.New()
+	e1 := logrus.NewEntry(logger)
+	e2 := logrus.NewEntry(logger)
+	e3 := logrus.NewEntry(logger)
+	e4 := logrus.NewEntry(logger)
+	e5 := logrus.NewEntry(logger)
+
+	testData := []struct {
+		Name   string
+		Source []*logrus.Entry
+		Size   int
+		Expect [][]*logrus.Entry
+	}{
+		{
+			Name:   "pattern 1 (empty)",
+			Source: []*logrus.Entry{},
+			Size:   3,
+			Expect: [][]*logrus.Entry{},
+		},
+		{
+			Name:   "pattern 2 (length of source < size)",
+			Source: []*logrus.Entry{e1},
+			Size:   3,
+			Expect: [][]*logrus.Entry{[]*logrus.Entry{e1}},
+		},
+		{
+			Name:   "pattern 3 (length of source == size)",
+			Source: []*logrus.Entry{e1, e2, e3},
+			Size:   3,
+			Expect: [][]*logrus.Entry{[]*logrus.Entry{e1, e2, e3}},
+		},
+		{
+			Name:   "pattern 4 (length of source > size)",
+			Source: []*logrus.Entry{e1, e2, e3, e4, e5},
+			Size:   3,
+			Expect: [][]*logrus.Entry{[]*logrus.Entry{e1, e2, e3}, []*logrus.Entry{e4, e5}},
+		},
+	}
+
+	for _, data := range testData {
+		actual := splitBuf(data.Source, data.Size)
+		if !reflect.DeepEqual(data.Expect, actual) {
+			t.Fatalf("\nExpected: %+v\nActual:   %+v\n", data.Expect, actual)
+		}
+	}
+}
