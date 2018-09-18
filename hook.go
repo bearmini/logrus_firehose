@@ -172,6 +172,8 @@ func (h *FirehoseHook) getData(entry *logrus.Entry) []byte {
 		entry.Data["message"] = entry.Message
 	}
 
+	entry.Data["level"] = entry.Level
+
 	for k, v := range entry.Data {
 		if _, ok := h.ignoreFields[k]; ok {
 			continue
