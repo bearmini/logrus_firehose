@@ -3,6 +3,7 @@ package logrus_firehose
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -112,7 +113,7 @@ func (h *FirehoseHook) Flush() {
 func (h *FirehoseHook) bufLoop() {
 	defer func() {
 		if err := recover(); err != nil {
-			fmt.Printf("panic: %+v\n", err)
+			fmt.Fprintf(os.Stderr, "panic: %+v\n", err)
 		}
 	}()
 	for {
