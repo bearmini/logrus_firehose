@@ -139,7 +139,7 @@ func (h *FirehoseHook) flush() {
 		records := make([]*firehose.Record, 0, len(buf))
 		for _, e := range buf {
 			records = append(records, &firehose.Record{
-				Data: h.getData(e),
+				Data: append(h.getData(e), []byte("\n")...),
 			})
 		}
 		in := &firehose.PutRecordBatchInput{
