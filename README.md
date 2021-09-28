@@ -13,7 +13,7 @@ import (
     "github.com/aws/aws-sdk-go/aws"
     "github.com/aws/aws-sdk-go/aws/credentials"
     "github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
-    "github.com/beaubrewer/logrus_firehose"
+    "github.com/bearmini/logrus_firehose"
     "github.com/sirupsen/logrus"
 )
 
