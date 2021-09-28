@@ -3,6 +3,7 @@ package logrus_firehose
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -28,6 +29,7 @@ var defaultLevels = []logrus.Level{
 // streaming data to destinations such as Amazon Simple Storage Service (Amazon
 // S3), Amazon Elasticsearch Service (Amazon ES), and Amazon Redshift.
 type FirehoseHook struct {
+	awsConfig           *aws.Config
 	client              *firehose.Firehose
 	buf                 []*logrus.Entry
 	bufCh               chan *logrus.Entry
@@ -55,6 +57,7 @@ func NewWithAWSConfig(streamName string, conf *aws.Config) (*FirehoseHook, error
 	errCh := make(chan error)
 
 	h := &FirehoseHook{
+		awsConfig:    conf,
 		client:       svc,
 		buf:          make([]*logrus.Entry, 0),
 		bufCh:        bufCh,
@@ -151,6 +154,8 @@ func (h *FirehoseHook) flush() {
 			h.errCh <- err
 		}
 	}
+
+	h.updateFirehoseClient()
 }
 
 func splitBuf(buf []*logrus.Entry, size int) [][]*logrus.Entry {
@@ -210,4 +215,14 @@ func formatData(value interface{}) (formatted interface{}) {
 	default:
 		return value
 	}
+}
+
+func (h *FirehoseHook) updateFirehoseClient() {
+	sess, err := session.NewSession(h.awsConfig)
+	if err != nil {
+		log.Printf("unable to create a new aws session: %v\n", err)
+		return
+	}
+
+	h.client = firehose.New(sess)
 }
