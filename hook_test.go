@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
@@ -15,7 +16,7 @@ func TestNewWithAWSConfig(t *testing.T) {
 	assert := assert.New(t)
 	t.Skip("TODO: add some case")
 
-	hook, err := NewWithAWSConfig("test_stream", nil)
+	hook, err := NewWithAWSConfig("test_stream", *aws.NewConfig())
 	assert.Error(err)
 	assert.Nil(hook)
 }
