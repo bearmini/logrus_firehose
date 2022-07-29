@@ -1,14 +1,14 @@
 package logrus_firehose
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/firehose"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/firehose"
+	firehosetypes "github.com/aws/aws-sdk-go-v2/service/firehose/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -29,8 +29,8 @@ var defaultLevels = []logrus.Level{
 // streaming data to destinations such as Amazon Simple Storage Service (Amazon
 // S3), Amazon Elasticsearch Service (Amazon ES), and Amazon Redshift.
 type FirehoseHook struct {
-	awsConfig           *aws.Config
-	client              *firehose.Firehose
+	awsConfig           aws.Config
+	client              *firehose.Client
 	buf                 []*logrus.Entry
 	bufCh               chan *logrus.Entry
 	flushCh             chan bool
@@ -44,13 +44,8 @@ type FirehoseHook struct {
 }
 
 // NewWithConfig returns initialized logrus hook for Firehose with persistent Firehose logger.
-func NewWithAWSConfig(streamName string, conf *aws.Config) (*FirehoseHook, error) {
-	sess, err := session.NewSession(conf)
-	if err != nil {
-		return nil, err
-	}
-
-	svc := firehose.New(sess)
+func NewWithAWSConfig(streamName string, conf aws.Config) (*FirehoseHook, error) {
+	svc := firehose.NewFromConfig(conf)
 
 	bufCh := make(chan *logrus.Entry, 1000)
 	flushCh := make(chan bool)
@@ -139,9 +134,9 @@ func (h *FirehoseHook) flush() {
 	}()
 
 	for _, buf := range splitBuf(h.buf, maxBatchRecords) {
-		records := make([]*firehose.Record, 0, len(buf))
+		records := make([]firehosetypes.Record, 0, len(buf))
 		for _, e := range buf {
-			records = append(records, &firehose.Record{
+			records = append(records, firehosetypes.Record{
 				Data: h.getData(e),
 			})
 		}
@@ -149,7 +144,7 @@ func (h *FirehoseHook) flush() {
 			DeliveryStreamName: aws.String(h.streamName),
 			Records:            records,
 		}
-		_, err := h.client.PutRecordBatch(in)
+		_, err := h.client.PutRecordBatch(context.Background(), in)
 		if err != nil {
 			h.errCh <- err
 		}
@@ -218,11 +213,5 @@ func formatData(value interface{}) (formatted interface{}) {
 }
 
 func (h *FirehoseHook) updateFirehoseClient() {
-	sess, err := session.NewSession(h.awsConfig)
-	if err != nil {
-		log.Printf("unable to create a new aws session: %v\n", err)
-		return
-	}
-
-	h.client = firehose.New(sess)
+	h.client = firehose.NewFromConfig(h.awsConfig)
 }

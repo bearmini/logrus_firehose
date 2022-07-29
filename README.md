@@ -10,19 +10,14 @@ logrus_firehose
 
 ```go
 import (
-    "github.com/aws/aws-sdk-go/aws"
-    "github.com/aws/aws-sdk-go/aws/credentials"
-    "github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
+    "github.com/aws/aws-sdk-go-v2/aws"
+    "github.com/aws/aws-sdk-go-v2/config"
     "github.com/bearmini/logrus_firehose"
     "github.com/sirupsen/logrus"
 )
 
 func main() {
-    cred := credentials.NewCredentials(&ec2rolecreds.EC2RoleProvider{})
-    awsConfig := &aws.Config{
-        Credentials: cred,
-        Region:      aws.String("us-west-2"),
-    }
+    awsConfig := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
     hook, err := logrus_firehose.NewWithAWSConfig("my_stream", awsConfig)
 
     // set custom fire level
