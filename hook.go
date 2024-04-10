@@ -24,6 +24,10 @@ var defaultLevels = []logrus.Level{
 	logrus.InfoLevel,
 }
 
+type FlushRequest struct {
+	Sync bool
+}
+
 // FirehoseHook is logrus hook for AWS Firehose.
 // Amazon Kinesis Firehose is a fully-managed service that delivers real-time
 // streaming data to destinations such as Amazon Simple Storage Service (Amazon
@@ -33,7 +37,7 @@ type FirehoseHook struct {
 	client           *firehose.Client
 	buf              []*logrus.Entry
 	bufCh            chan *logrus.Entry
-	flushCh          chan bool
+	flushCh          chan FlushRequest
 	flushCompletedCh chan struct{}
 	errCh            chan error
 	streamName       string
@@ -48,20 +52,22 @@ func NewWithAWSConfig(streamName string, conf aws.Config) (*FirehoseHook, error)
 	svc := firehose.NewFromConfig(conf)
 
 	bufCh := make(chan *logrus.Entry, 1000)
-	flushCh := make(chan bool)
+	flushCh := make(chan FlushRequest)
+	flushCompletedCh := make(chan struct{})
 	errCh := make(chan error)
 
 	h := &FirehoseHook{
-		awsConfig:    conf,
-		client:       svc,
-		buf:          make([]*logrus.Entry, 0),
-		bufCh:        bufCh,
-		flushCh:      flushCh,
-		errCh:        errCh,
-		streamName:   streamName,
-		levels:       defaultLevels,
-		ignoreFields: make(map[string]struct{}),
-		filters:      make(map[string]func(interface{}) interface{}),
+		awsConfig:        conf,
+		client:           svc,
+		buf:              make([]*logrus.Entry, 0),
+		bufCh:            bufCh,
+		flushCh:          flushCh,
+		flushCompletedCh: flushCompletedCh,
+		errCh:            errCh,
+		streamName:       streamName,
+		levels:           defaultLevels,
+		ignoreFields:     make(map[string]struct{}),
+		filters:          make(map[string]func(interface{}) interface{}),
 	}
 
 	go h.bufLoop()
@@ -105,12 +111,12 @@ func (h *FirehoseHook) Fire(entry *logrus.Entry) error {
 }
 
 func (h *FirehoseHook) FlushSync() {
-	h.flushCh <- true
+	h.flushCh <- FlushRequest{Sync: true}
 	<-h.flushCompletedCh
 }
 
 func (h *FirehoseHook) Flush() {
-	h.flushCh <- true
+	h.flushCh <- FlushRequest{Sync: false}
 }
 
 func (h *FirehoseHook) bufLoop() {
@@ -123,20 +129,22 @@ func (h *FirehoseHook) bufLoop() {
 		select {
 		case e := <-h.bufCh:
 			h.buf = append(h.buf, e)
-		case <-h.flushCh:
-			h.flush()
+		case flushRequest := <-h.flushCh:
+			h.flush(flushRequest)
 		}
 	}
 }
 
-func (h *FirehoseHook) flush() {
+func (h *FirehoseHook) flush(flushRequest FlushRequest) {
 	if len(h.buf) == 0 {
 		return
 	}
 
 	defer func() {
 		h.buf = make([]*logrus.Entry, 0)
-		h.flushCompletedCh <- struct{}{}
+		if flushRequest.Sync {
+			h.flushCompletedCh <- struct{}{}
+		}
 	}()
 
 	for _, buf := range splitBuf(h.buf, maxBatchRecords) {
