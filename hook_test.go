@@ -229,19 +229,19 @@ func TestSplitBuf(t *testing.T) {
 			Name:   "pattern 2 (length of source < size)",
 			Source: []*logrus.Entry{e1},
 			Size:   3,
-			Expect: [][]*logrus.Entry{[]*logrus.Entry{e1}},
+			Expect: [][]*logrus.Entry{{e1}},
 		},
 		{
 			Name:   "pattern 3 (length of source == size)",
 			Source: []*logrus.Entry{e1, e2, e3},
 			Size:   3,
-			Expect: [][]*logrus.Entry{[]*logrus.Entry{e1, e2, e3}},
+			Expect: [][]*logrus.Entry{{e1, e2, e3}},
 		},
 		{
 			Name:   "pattern 4 (length of source > size)",
 			Source: []*logrus.Entry{e1, e2, e3, e4, e5},
 			Size:   3,
-			Expect: [][]*logrus.Entry{[]*logrus.Entry{e1, e2, e3}, []*logrus.Entry{e4, e5}},
+			Expect: [][]*logrus.Entry{{e1, e2, e3}, {e4, e5}},
 		},
 	}
 
