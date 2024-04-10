@@ -29,18 +29,18 @@ var defaultLevels = []logrus.Level{
 // streaming data to destinations such as Amazon Simple Storage Service (Amazon
 // S3), Amazon Elasticsearch Service (Amazon ES), and Amazon Redshift.
 type FirehoseHook struct {
-	awsConfig           aws.Config
-	client              *firehose.Client
-	buf                 []*logrus.Entry
-	bufCh               chan *logrus.Entry
-	flushCh             chan bool
-	errCh               chan error
-	streamName          string
-	defaultPartitionKey string
-	levels              []logrus.Level
-	ignoreFields        map[string]struct{}
-	filters             map[string]func(interface{}) interface{}
-	addNewline          bool
+	awsConfig        aws.Config
+	client           *firehose.Client
+	buf              []*logrus.Entry
+	bufCh            chan *logrus.Entry
+	flushCh          chan bool
+	flushCompletedCh chan struct{}
+	errCh            chan error
+	streamName       string
+	levels           []logrus.Level
+	ignoreFields     map[string]struct{}
+	filters          map[string]func(interface{}) interface{}
+	addNewline       bool
 }
 
 // NewWithConfig returns initialized logrus hook for Firehose with persistent Firehose logger.
@@ -104,6 +104,11 @@ func (h *FirehoseHook) Fire(entry *logrus.Entry) error {
 	return nil
 }
 
+func (h *FirehoseHook) FlushSync() {
+	h.flushCh <- true
+	<-h.flushCompletedCh
+}
+
 func (h *FirehoseHook) Flush() {
 	h.flushCh <- true
 }
@@ -131,6 +136,7 @@ func (h *FirehoseHook) flush() {
 
 	defer func() {
 		h.buf = make([]*logrus.Entry, 0)
+		h.flushCompletedCh <- struct{}{}
 	}()
 
 	for _, buf := range splitBuf(h.buf, maxBatchRecords) {
